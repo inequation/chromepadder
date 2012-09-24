@@ -34,8 +34,7 @@ ChromePadder.main = function() {
         var notification = webkitNotifications.createNotification(
             'icon.png',
             'Gamepad not supported!',
-            'Make sure support is enabled in <a href="chrome://flags">'
-                + 'chrome://flags</a> and restart the extension.');
+            'Make sure support is enabled in chrome://flags and restart the extension.');
         notification.show();
         return;
     }
