@@ -22,7 +22,7 @@ ChromePadder.cycleTab = function(forward) {
                     break;
                 }
             }
-            console.log('Cycling ' + (forward ? 'forward' : 'backward'));
+            //console.log('Cycling ' + (forward ? 'forward' : 'backward'));
             if (forward === true && nextTabId)
                 chrome.tabs.update(nextTabId, {selected: true})
             else if (prevTabId)
@@ -84,13 +84,25 @@ ChromePadder.main = function() {
     if (ChromePadder.state == 'active') {
         //console.log('Active frame');
         
+        // the following actions are window-wide and don't require a connection
+        // to the active tab
+        
         // tab switching on triggers
-        if (pad['rightShoulder1'] > 0.5 && prevPad['rightShoulder1'] < 0.5)
+        if (pad.rightShoulder1 > 0.5 && prevPad.rightShoulder1 < 0.5)
             ChromePadder.cycleTab(true);
-        else if (pad['leftShoulder1'] > 0.5 && prevPad['leftShoulder1'] < 0.5)
+        else if (pad.leftShoulder1 > 0.5 && prevPad.leftShoulder1 < 0.5)
             ChromePadder.cycleTab(false);
         
-        // no point in checking the pad input if the active tab port is not open
+        // tab opening and closing on X and Y
+        if (pad.faceButton2 < 0.5 && prevPad.faceButton2 > 0.5)
+            chrome.tabs.create({active: true});
+        else if (pad.faceButton3 < 0.5 && prevPad.faceButton3 > 0.5) {
+            chrome.tabs.getSelected(null, function(tab) {
+                chrome.tabs.remove(tab.id);
+            });
+        }
+        
+        // the following actions take effect on the active tab
         if (ChromePadder.port) {
             // commands to dispatch are accumulated in this message object
             var message = {};
@@ -98,13 +110,13 @@ ChromePadder.main = function() {
             
             // scrolling on the left stick
             message.deltaX = Math.round(
-                (Math.abs(pad['leftStickX']) > pad['deadZoneLeftStick'])
-                ? pad['leftStickX'] * pad['leftStickX'] * pad['leftStickX']
+                (Math.abs(pad.leftStickX) > pad.deadZoneLeftStick)
+                ? pad.leftStickX * pad.leftStickX * pad.leftStickX
                     * ChromePadder.scrollSpeed
                 : 0);
             message.deltaY = Math.round(
-                (Math.abs(pad['leftStickY']) > pad['deadZoneLeftStick'])
-                ? pad['leftStickY'] * pad['leftStickY'] * pad['leftStickY']
+                (Math.abs(pad.leftStickY) > pad.deadZoneLeftStick)
+                ? pad.leftStickY * pad.leftStickY * pad.leftStickY
                     * ChromePadder.scrollSpeed
                 : 0);
             if (message.deltaX == 0 && message.deltaY == 0) {
@@ -114,16 +126,15 @@ ChromePadder.main = function() {
                 send = true;
             
             // zooming with the right stick
-            if (pad['rightStickButton'] > 0.5)
-            {
+            if (pad.rightStickButton > 0.5 && prevPad.rightStickButton < 0.5) {
                 // reset with a click...
-                message.zoomReset = true;
+                message.deltaZoom = 0;
                 send = true;
             } else {
                 // ...or free control with the Y axis
                 message.deltaZoom = -Math.round(
-                    (Math.abs(pad['rightStickY']) > pad['deadZoneRightStick'])
-                    ? pad['rightStickY'] * ChromePadder.zoomSpeed
+                    (Math.abs(pad.rightStickY) > pad.deadZoneRightStick)
+                    ? pad.rightStickY * ChromePadder.zoomSpeed
                     : 0);
                 if (message.deltaZoom == 0)
                     message.deltaZoom = undefined;
@@ -131,7 +142,20 @@ ChromePadder.main = function() {
                     send = true;
             }
             
-            // execute the accumulated commands
+            // navigation with the bumpers and refreshing/stopping with the back
+            // button
+            if (pad.select < 0.5 && prevPad.select > 0.5) {
+                message.historyGo = 0;
+                send = true;
+            } else if (pad.leftShoulder0 < 0.5 && prevPad.leftShoulder0 > 0.5) {
+                message.historyGo = -1;
+                send = true;
+            } else if (pad.rightShoulder0 < 0.5 && prevPad.rightShoulder0 > 0.5) {
+                message.historyGo = 1;
+                send = true;
+            }
+            
+            // execute the commands in the tab
             if (send) {
                 try {
                     ChromePadder.port.postMessage(message);
