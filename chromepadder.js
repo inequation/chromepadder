@@ -22,7 +22,9 @@ ChromePadder.cycleTab = function(forward) {
                     break;
                 }
             }
-            //console.log('Cycling ' + (forward ? 'forward' : 'backward'));
+            /*console.log('Cycling ' + ( forward
+                    ? ('forward to ' + nextTabId)
+                    : ('backward to ' + prevTabId)));*/
             if (forward === true && nextTabId)
                 chrome.tabs.update(nextTabId, {selected: true})
             else if (prevTabId)
@@ -32,10 +34,35 @@ ChromePadder.cycleTab = function(forward) {
 
 // helper callback that connects to the port of the given tab
 ChromePadder.connect = function(tabId) {
+    // if we change the port, make sure we don't get disconnect messages from
+    // inactive tabs
+    if (ChromePadder.port !== undefined)
+        ChromePadder.port.onMessage.removeListener(ChromePadder.onMessageFromTab);
     try {
         ChromePadder.port = chrome.tabs.connect(tabId, {name: "ChromePadder"});
+        ChromePadder.port.tabId = tabId;
+        ChromePadder.port.onMessage.addListener(ChromePadder.onMessageFromTab);
+        ChromePadder.port.postMessage({tabId: tabId});
     } catch (e) {
         ChromePadder.port = undefined;
+    }
+}
+
+// helper callback that clears the port reference so that we may reconnect with
+// the tab after a refresh or unload
+ChromePadder.onMessageFromTab = function(message) {
+    if (message.tabId == ChromePadder.port.tabId) {
+        // defer a reconnect by 1 frame
+        setTimeout(function() {
+            ChromePadder.port = undefined;
+            chrome.windows.getLastFocused({populate: true},
+                function (theWindow) {
+                    chrome.tabs.query({active: true, windowId: theWindow.id},
+                        function(tabArray) {
+                            ChromePadder.connect(tabArray[0].id);
+                        });
+                });
+        }, 1000 / ChromePadder.activeFPS);
     }
 }
 
@@ -68,9 +95,13 @@ ChromePadder.main = function() {
             ChromePadder.state = 'active';
                         
             // detect currently active tab and connect to its port
-            chrome.tabs.getSelected(null, function(tab) {
-                ChromePadder.connect(tab.id);
-            });
+            chrome.windows.getLastFocused({populate: true},
+                function (theWindow) {
+                    chrome.tabs.query({active: true, windowId: theWindow.id},
+                        function(tabArray) {
+                            ChromePadder.connect(tabArray[0].id);
+                        });
+                });
             
             // subscribe to tab activation events to always be up-to-date
             chrome.tabs.onActivated.addListener(function (activeInfo) {
@@ -103,10 +134,10 @@ ChromePadder.main = function() {
         }
         
         // the following actions take effect on the active tab
-        if (ChromePadder.port) {
-            // commands to dispatch are accumulated in this message object
-            var message = {};
-            var send = false;
+        
+        if (ChromePadder.port !== undefined) {
+            var message = {};       // commands to dispatch
+            var send = false;       // used to avoid sending empty messages
             
             // scrolling on the left stick
             message.deltaX = Math.round(
