@@ -10,25 +10,40 @@ ChromePadder.scrollSpeed = 200;
 ChromePadder.zoomSpeed = 5;
 
 ChromePadder.cycleTab = function(forward) {
-    var tabs = ChromePadder.focusedWindowTabs;
-    var prevTabId = undefined;
-    var nextTabId = undefined;
-    for (var i = 0; i < tabs.length; ++i) {
-        if (tabs[i].active) {
-            //ChromePadder.activeTab = tabs[i];
-            prevTabId = tabs[((i - 1) >= 0) ? (i - 1) : (tabs.length - 1)].id;
-            nextTabId = tabs[(i + 1) % tabs.length].id;
-            break;
-        }
+    chrome.windows.getLastFocused({populate: true},
+        function (theWindow) {
+            var tabs = theWindow.tabs;
+            var prevTabId = undefined;
+            var nextTabId = undefined;
+            for (var i = 0; i < tabs.length; ++i) {
+                if (tabs[i].active) {
+                    prevTabId = tabs[(i > 1) ? (i - 1) : (tabs.length - 1)].id;
+                    nextTabId = tabs[(i + 1) % tabs.length].id;
+                    break;
+                }
+            }
+            console.log('Cycling ' + (forward ? 'forward' : 'backward'));
+            if (forward === true && nextTabId)
+                chrome.tabs.update(nextTabId, {selected: true})
+            else if (prevTabId)
+                chrome.tabs.update(prevTabId, {selected: true}) 
+        });
+}
+
+// helper callback that connects to the port of the given tab
+ChromePadder.connect = function(tabId) {
+    try {
+        ChromePadder.port = chrome.tabs.connect(tabId, {name: "ChromePadder"});
+    } catch (e) {
+        ChromePadder.port = undefined;
     }
-    console.log('Cycling ' + (forward ? 'forward' : 'backward'));
-    if (forward === true && nextTabId)
-        chrome.tabs.update(nextTabId, {selected: true})
-    else if (prevTabId)
-        chrome.tabs.update(prevTabId, {selected: true})
 }
 
 ChromePadder.main = function() {
+    // wait for gamepad.js to load
+    if (Gamepad === undefined)
+        setTimeout(ChromePadder.main, 1000 / ChromePadder.standbyFPS);
+    
     // check for gamepad support first
     if (!Gamepad.supported) {
         var notification = webkitNotifications.createNotification(
@@ -43,9 +58,6 @@ ChromePadder.main = function() {
     if (ChromePadder.state === undefined)
         ChromePadder.state = 'standby';
     
-    chrome.windows.getLastFocused({populate: true},
-        function (theWindow) {ChromePadder.focusedWindowTabs = theWindow.tabs});
-    
     var pad = Gamepad.getState(0);
     var prevPad = Gamepad.getPreviousState(0);
     
@@ -54,17 +66,15 @@ ChromePadder.main = function() {
         if (pad) {
             console.log('Activating');
             ChromePadder.state = 'active';
-            
-            // detect currently active tab
+                        
+            // detect currently active tab and connect to its port
             chrome.tabs.getSelected(null, function(tab) {
-                ChromePadder.activeTab = tab;
+                ChromePadder.connect(tab.id);
             });
             
             // subscribe to tab activation events to always be up-to-date
             chrome.tabs.onActivated.addListener(function (activeInfo) {
-                chrome.tabs.get(activeInfo.tabId, function(tab) {
-                    ChromePadder.activeTab = tab;
-                });
+                ChromePadder.connect(activeInfo.tabId);
             });
         } else
             // reschedule another frame
@@ -75,61 +85,56 @@ ChromePadder.main = function() {
         //console.log('Active frame');
         
         // tab switching on triggers
-        if (ChromePadder.focusedWindowTabs
-            && ChromePadder.focusedWindowTabs.length > 1) {
-            if (pad['rightShoulder1'] > 0.5 && prevPad['rightShoulder1'] < 0.5)
-                ChromePadder.cycleTab(true);
-            else if (pad['leftShoulder1'] > 0.5 && prevPad['leftShoulder1'] < 0.5)
-                ChromePadder.cycleTab(false);
-        }
+        if (pad['rightShoulder1'] > 0.5 && prevPad['rightShoulder1'] < 0.5)
+            ChromePadder.cycleTab(true);
+        else if (pad['leftShoulder1'] > 0.5 && prevPad['leftShoulder1'] < 0.5)
+            ChromePadder.cycleTab(false);
         
-        if (ChromePadder.activeTab) {
-            var tab = ChromePadder.activeTab;
-            // commands are accumulated in this string
-            var script = '';
+        // no point in checking the pad input if the active tab port is not open
+        if (ChromePadder.port) {
+            // commands to dispatch are accumulated in this message object
+            var message = {};
+            var send = false;
             
             // scrolling on the left stick
-            scrollX = Math.round(
+            message.deltaX = Math.round(
                 (Math.abs(pad['leftStickX']) > pad['deadZoneLeftStick'])
                 ? pad['leftStickX'] * pad['leftStickX'] * pad['leftStickX']
                     * ChromePadder.scrollSpeed
                 : 0);
-            scrollY = Math.round(
+            message.deltaY = Math.round(
                 (Math.abs(pad['leftStickY']) > pad['deadZoneLeftStick'])
                 ? pad['leftStickY'] * pad['leftStickY'] * pad['leftStickY']
                     * ChromePadder.scrollSpeed
                 : 0);
-            if (scrollX != 0 || scrollY != 0) {
-                console.log('Scroll delta: ' + scrollX + ',' + scrollY);
-                script += 'window.scrollTo('
-                    + 'window.pageXOffset+' + scrollX + ','
-                    + 'window.pageYOffset+' + scrollY + ');';
-            }
+            if (message.deltaX == 0 && message.deltaY == 0) {
+                message.deltaX = undefined;
+                message.deltaY = undefined;
+            } else
+                send = true;
             
             // zooming with the right stick
-            if (pad['rightStickButton'] > 0.5) {
+            if (pad['rightStickButton'] > 0.5)
+            {
                 // reset with a click...
-                script += 'document.body.style.zoom=\'100%\';';
+                message.zoomReset = true;
+                send = true;
             } else {
                 // ...or free control with the Y axis
-                zoom = -Math.round(
+                message.deltaZoom = -Math.round(
                     (Math.abs(pad['rightStickY']) > pad['deadZoneRightStick'])
                     ? pad['rightStickY'] * ChromePadder.zoomSpeed
                     : 0);
-                if (zoom != 0) {
-                    console.log('Zoom delta: ' + zoom);
-                    script += 'if(document.body.style.zoom==\'\')'
-                            + 'document.body.style.zoom=\'100%\';'
-                        + 'document.body.style.zoom=(Math.max(('
-                        + 'parseInt(document.body.style.zoom)+'
-                        + zoom + '),10)+\'%\');';
-                }
+                if (message.deltaZoom == 0)
+                    message.deltaZoom = undefined;
+                else
+                    send = true;
             }
             
             // execute the accumulated commands
-            if (script != '') {
+            if (send) {
                 try {
-                    chrome.tabs.executeScript(tab.id, {code:script});
+                    ChromePadder.port.postMessage(message);
                 } catch (e) {}
             }
         }
@@ -139,21 +144,5 @@ ChromePadder.main = function() {
     }
 }
 
-// ============================================================================
-// gamepad.js inclusion
-// ============================================================================
-
-// adding the script tag to the head
-var head = document.getElementsByTagName('head')[0];
-var script = document.createElement('script');
-script.type = 'text/javascript';
-script.src = 'gamepad.js';
-
-// bind the event to the callback function 
-// there are several events for cross browser compatibility
-script.onreadystatechange = ChromePadder.main;
-script.onload = ChromePadder.main;
-
-// fire the loading
-head.appendChild(script);
-
+// kick the loop off
+ChromePadder.main();

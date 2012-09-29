@@ -7,7 +7,7 @@
     "default_icon": "icon.png"
   },
   "background": {
-    "scripts": ["chromepadder.js"]
+    "page": "chromepadder.html"
   },
   "permissions": [
     "tabs",
@@ -16,5 +16,12 @@
   ],
   "web_accessible_resources": [
     "icon.png"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["injection.js"],
+      "run_at": "document_start"
+    }
   ]
 }

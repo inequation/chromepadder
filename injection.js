@@ -1,36 +1,38 @@
 // ChromePadder content script
 
 function CPScroll(deltaX, deltaY) {
+    console.log('SCROLL');
     window.scrollTo(window.pageXOffset + deltaX, window.pageYOffset + deltaY);
 }
 
 function CPZoom(delta) {
+    console.log('ZOOM');
     if (document.body.style.zoom == '')
         document.body.style.zoom = '100%';
-    // limit zoom to 10% so that we don't scale out too much away
+    // limit zoom to 10% so that we don't scale out too far away
     document.body.style.zoom = Math.max(
         (parseInt(document.body.style.zoom) + delta),
         10) + '%';
 }
 
-// retrieve current tab ID so that we can intercept the right IPCs
-chrome.tabs.getCurrent(function(tab) {
-    window.tabId = tab.id;
-});
+function CPResetZoom() {
+    document.body.style.zoom = '100%';
+}
 
 // sign up for IPC
-var CPPort = chrome.extension.connect();
-chrome.extension.onMessage.addListener(function(message, sender, sendResponse) {
-    // see if this message is meant for us
-    if (message.targetTabId != window.tabId)
+chrome.extension.onConnect.addListener(function(port) {
+    if (port.name != "ChromePadder")
         return;
     
-    // dispatch scroll command
-    if (message.deltaX !== undefined && message.deltaY !== undefined
-        && message.deltaX != 0 && message.deltaY != 0)
-        CPScroll(message.deltaX, message.deltaY);
-    
-    // dispatch zoom command
-    if (message.deltaZoom !== undefined && message.deltaZoom != 0)
-        CPZoom(message.deltaZoom);
+    port.onMessage.addListener(function(message) {
+        // execute scroll command
+        if (message.deltaX !== undefined && message.deltaY !== undefined)
+            CPScroll(message.deltaX, message.deltaY);
+        
+        // execute zoom command
+        if (message.zoomReset)
+            CPResetZoom();
+        else if (message.deltaZoom !== undefined && message.deltaZoom != 0)
+            CPZoom(message.deltaZoom);
+    });
 });
