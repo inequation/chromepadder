@@ -14,6 +14,27 @@ function CPZoom(delta) {
     document.body.style.width = document.body.style.zoom;
 }
 
+var CPCreateCrosshair = function() {
+    // add the margins so that the crosshair can reach everything
+    document.body.style.padding = (screen.height / 2) + 'px '
+        + (screen.width / 2) + 'px';
+    document.body.style.width = '100%';
+    document.body.style.height = '100%';
+    // scroll so that visually nothing changes
+    window.scrollTo(screen.height / 2, screen.width / 2);
+    
+    window.CPCrosshair = document.createElement('img');
+    window.CPCrosshair.src = chrome.extension.getURL(
+        'crosshairs/circle/circle-06.png');
+    window.CPCrosshair.style.position = 'fixed';
+    window.CPCrosshair.style.top = '50%';
+    window.CPCrosshair.style.left = '50%'
+    window.CPCrosshair.style.width = '64px';
+    window.CPCrosshair.style.height = '64px';
+    window.CPCrosshair.style.zIndex = 99999999;
+    document.body.appendChild(window.CPCrosshair);
+}
+
 // sign up for IPC
 chrome.extension.onConnect.addListener(function(port) {
     if (port.name != "ChromePadder")
@@ -22,8 +43,20 @@ chrome.extension.onConnect.addListener(function(port) {
     window.CPPort = port;
     port.onMessage.addListener(function(message) {
         // parse the init message
-        if (message.tabId !== undefined)
+        if (message.tabId !== undefined) {
+            // keep our tab ID for future reference
             window.CPPort.tabId = message.tabId;
+            
+            // impose the crosshair over the document
+            if (window.CPCrosshair === undefined) {
+                if (document.readyState === "loading")
+                    // if not interactive yet, attach to the onLoad event
+                    window.addEventListener('load', CPCreateCrosshair, false);
+                else
+                    // otherwise do it right away
+                    CPCreateCrosshair();
+            }
+        }
         
         // execute scroll command
         if (message.deltaX !== undefined && message.deltaY !== undefined)
@@ -59,3 +92,4 @@ chrome.extension.onConnect.addListener(function(port) {
 window.addEventListener('unload', (function() {
     window.CPPort.postMessage({tabId: window.CPPort.tabId});
 }), false);
+

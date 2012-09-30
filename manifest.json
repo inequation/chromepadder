@@ -15,7 +15,8 @@
     "notifications"
   ],
   "web_accessible_resources": [
-    "icon.png"
+    "icon.png",
+    "crosshairs/circle/circle-06.png"
   ],
   "content_scripts": [
     {
