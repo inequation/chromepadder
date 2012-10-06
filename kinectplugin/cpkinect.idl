@@ -1,0 +1,5 @@
+[binding_model=by_value, include="cpkinect.h"] class ChromePadderKinect {
+    ChromePadderKinect();
+    float GetScrollX();
+    float GetScrollY();
+};
