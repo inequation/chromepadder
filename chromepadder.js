@@ -186,6 +186,15 @@ ChromePadder.main = function() {
                 send = true;
             }
             
+            // left mouse click with the A button
+            if (pad.faceButton0 > 0.5 && prevPad.faceButton0 < 0.5) {
+                message.action = 'mouseDown';
+                send = true;
+            } else if (pad.faceButton0 < 0.5 && prevPad.faceButton0 > 0.5) {
+                message.action = 'mouseUp';
+                send = true;
+            }
+            
             // execute the commands in the tab
             if (send) {
                 try {

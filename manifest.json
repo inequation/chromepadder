@@ -11,8 +11,8 @@
   },
   "permissions": [
     "tabs",
-    "*://*/*",
-    "notifications"
+    "notifications",
+    "*://*/*"
   ],
   "web_accessible_resources": [
     "icon.png",
