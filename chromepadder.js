@@ -143,12 +143,12 @@ ChromePadder.main = function() {
             message.deltaX = Math.round(
                 (Math.abs(pad.leftStickX) > pad.deadZoneLeftStick)
                 ? pad.leftStickX * pad.leftStickX * pad.leftStickX
-                    * ChromePadder.scrollSpeed
+                    * pad.leftStickX * pad.leftStickX * ChromePadder.scrollSpeed
                 : 0);
             message.deltaY = Math.round(
                 (Math.abs(pad.leftStickY) > pad.deadZoneLeftStick)
                 ? pad.leftStickY * pad.leftStickY * pad.leftStickY
-                    * ChromePadder.scrollSpeed
+                    * pad.leftStickY * pad.leftStickY * ChromePadder.scrollSpeed
                 : 0);
             if (message.deltaX == 0 && message.deltaY == 0) {
                 message.deltaX = undefined;

@@ -24,5 +24,8 @@
       "js": ["injection.js"],
       "run_at": "document_start"
     }
+  ],
+  "plugins": [
+    { "path": "kinectplugin/libcpkinect.so" }
   ]
 }

@@ -2,7 +2,7 @@
 
 extern "C" {
   const char *NP_GetMIMEDescription(void) {
-    return "application/chromepadder-kinect::ChromePadder Kinect";
+    return "application/x-chromepadder-kinect::ChromePadder Kinect";
   }
 
   NPError NP_GetValue(NPP instance, NPPVariable variable, void *value) {
