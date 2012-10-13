@@ -186,6 +186,36 @@ ChromePadder.main = function() {
                 send = true;
             }
             
+            // arrow keys on the D-pad - separate axes
+            if (pad.dpadUp > 0.5 && prevPad.dpadUp < 0.5) {
+                message.arrowUp = true;
+                send = true;
+            } else if (pad.dpadUp < 0.5 && prevPad.dpadUp > 0.5) {
+                message.arrowUp = false;
+                send = true;
+            }
+            if (pad.dpadDown > 0.5 && prevPad.dpadDown < 0.5) {
+                message.arrowDown = true;
+                send = true;
+            } else if (pad.dpadDown < 0.5 && prevPad.dpadDown > 0.5) {
+                message.arrowDown = false;
+                send = true;
+            }
+            if (pad.dpadLeft > 0.5 && prevPad.dpadLeft < 0.5) {
+                message.arrowLeft = true;
+                send = true;
+            } else if (pad.dpadLeft < 0.5 && prevPad.dpadLeft > 0.5) {
+                message.arrowLeft = false;
+                send = true;
+            }
+            if (pad.dpadRight > 0.5 && prevPad.dpadRight < 0.5) {
+                message.arrowRight = true;
+                send = true;
+            } else if (pad.dpadRight < 0.5 && prevPad.dpadRight > 0.5) {
+                message.arrowRight = false;
+                send = true;
+            }
+            
             // left mouse click with the A button
             if (pad.faceButton0 > 0.5 && prevPad.faceButton0 < 0.5) {
                 message.action = 'mousedown';
