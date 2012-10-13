@@ -188,10 +188,11 @@ ChromePadder.main = function() {
             
             // left mouse click with the A button
             if (pad.faceButton0 > 0.5 && prevPad.faceButton0 < 0.5) {
-                message.action = 'mouseDown';
+                message.action = 'mousedown';
                 send = true;
             } else if (pad.faceButton0 < 0.5 && prevPad.faceButton0 > 0.5) {
-                message.action = 'mouseUp';
+                message.action = 'mouseup';
+                message.secondaryAction = 'click';
                 send = true;
             }
             

@@ -45,6 +45,8 @@ CPI.simulatedEvent = function(el, options) {
         opts.button,
         opts.relatedTarget
     );
+    
+    console.log('EVENT ' + opts.type + ' TO ' + el + ' AT ' + opts.screenX + ',' + opts.screenY);
 
     //Fire the event
     el.dispatchEvent(event);
@@ -52,17 +54,17 @@ CPI.simulatedEvent = function(el, options) {
 
 CPI.getCrosshairCoords = function() {
     var el = CPI.crosshair;
-    var x = 32;
-    var y = 32;
+    var x = 0;
+    var y = 0;
     while (el && !isNaN(el.offsetLeft) && !isNaN(el.offsetTop)) {
         x += el.offsetLeft - el.scrollLeft;
         y += el.offsetTop - el.scrollTop;
         el = el.offsetParent;
     }
-    // if the crosshair is in centre-float mode, add in the scroll offset
-    if (CPI.crosshair.style.position == 'fixed') {
-        x += window.pageXOfsset;
-        y += window.pageYOfsset;
+    // if the crosshair is not in centre-float mode, subtract the scroll offset
+    if (CPI.crosshair.style.position != 'fixed') {
+        x += window.pageXOffset;
+        y += window.pageYOffset;
     }
     return {top: y, left: x};
 }
@@ -71,16 +73,22 @@ CPI.scroll = function(deltaX, deltaY) {
     window.scrollBy(deltaX, deltaY);
     
     // handle mouseOver/mouseOut events
-    var coord = getCrosshairCoords();
-    console.log('COORD ' + coord.left + ', ' + coord.top);
+    var coord = CPI.getCrosshairCoords();
+    // move the crosshair out of the way so that we don't pick it up instead of the actual target
+    CPI.crosshair.style.top = '0%';
+    CPI.crosshair.style.left = '0%';
     var newTarget = document.elementFromPoint(coord.left, coord.top);
-    if (newTarget !== undefined && newTarget != CPI.target) {
-        if (target !== undefined) {
-            simulatedEvent(target, {type: 'mouseOut',
+    // move crosshair back
+    CPI.crosshair.style.top = '50%';
+    CPI.crosshair.style.left = '50%';
+    //console.log('COORD ' + coord.left + ', ' + coord.top + '; NEW TARGET = ' + newTarget);
+    if (newTarget !== undefined && newTarget != null && newTarget != CPI.target) {
+        if (CPI.target !== undefined) {
+            CPI.simulatedEvent(CPI.target, {type: 'mouseout',
                 screenX: coord.left, screenY: coord.top});
         }
-        target = newTarget;
-        simulatedEvent(target, {type: 'mouseOver',
+        CPI.target = newTarget;
+        CPI.simulatedEvent(newTarget, {type: 'mouseover',
             screenX: coord.left, screenY: coord.top});
     }
 }
@@ -119,6 +127,7 @@ CPI.createCrosshair = function() {
     CPI.crosshair.reticle.src = chrome.extension.getURL(
         'crosshairs/circle/circle-06.png');
     // locate the image so that its centre covers the div
+    CPI.crosshair.reticle.style.position = 'relative';
     CPI.crosshair.reticle.style.top = '-32px';
     CPI.crosshair.reticle.style.left = '-32px';
     CPI.crosshair.reticle.style.width = '64px';
@@ -180,10 +189,14 @@ chrome.extension.onConnect.addListener(function(port) {
         
         // execute input actions
         if (message.action !== undefined) {
-            if (CPI.target !== undefined) {
+            if (CPI.target !== undefined && CPI.target !== null) {
                 var coord = CPI.getCrosshairCoords();
-                CPI.simulatedEvenT(CPI.target, {type: message.action,
+		//console.log('ACTION ' + message.action + ' TO ' + CPI.target + ' AT ' + coord.left + ',' + coord.top);
+                CPI.simulatedEvent(CPI.target, {type: message.action,
                     screenX: coord.left, screenY: coord.top});
+                if (message.secondaryAction !== undefined)
+                    CPI.simulatedEvent(CPI.target, {type: message.secondaryAction,
+                        screenX: coord.left, screenY: coord.top});
             }
         }
     });
