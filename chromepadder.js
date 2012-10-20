@@ -7,7 +7,7 @@ window.ChromePadder = ChromePadder;
 ChromePadder.standbyFPS = 5;
 ChromePadder.activeFPS = 30;
 ChromePadder.scrollSpeed = 200;
-ChromePadder.zoomSpeed = 5;
+ChromePadder.zoomSpeed = 0.05;
 
 ChromePadder.cycleTab = function(forward) {
     chrome.windows.getLastFocused({populate: true},
@@ -163,11 +163,11 @@ ChromePadder.main = function() {
                 send = true;
             } else {
                 // ...or free control with the Y axis
-                message.deltaZoom = -Math.round(
-                    (Math.abs(pad.rightStickY) > pad.deadZoneRightStick)
-                    ? pad.rightStickY * ChromePadder.zoomSpeed
-                    : 0);
-                if (message.deltaZoom == 0)
+                message.deltaZoom =
+                    -((Math.abs(pad.rightStickY) > pad.deadZoneRightStick)
+                        ? pad.rightStickY * ChromePadder.zoomSpeed
+                        : 0);
+                if (Math.abs(message.deltaZoom) < 0.01)
                     message.deltaZoom = undefined;
                 else
                     send = true;
