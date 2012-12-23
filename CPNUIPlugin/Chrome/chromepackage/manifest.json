@@ -1,0 +1,9 @@
+{
+  "name": "ChromePadder NUI Plugin",
+  "version": "${FBSTRING_PLUGIN_VERSION}",
+  "description": "ChromePadder Native Plugin for Natural User Interface",
+
+	"plugins": [
+    { "path": "npCPNUIPlugin.dll", "public": true }
+  ]
+}
