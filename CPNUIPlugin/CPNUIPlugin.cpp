@@ -11,6 +11,8 @@
 
 #include "CPNUIPlugin.h"
 
+#include "XmlScript.h"
+
 ///////////////////////////////////////////////////////////////////////////////
 /// @fn CPNUIPlugin::StaticInitialize()
 ///
@@ -43,6 +45,8 @@ void CPNUIPlugin::StaticDeinitialize()
 ///         the JSAPI object until the onPluginReady method is called
 ///////////////////////////////////////////////////////////////////////////////
 CPNUIPlugin::CPNUIPlugin()
+	: m_pluginReady(false),
+	m_NUIAvailable(false)
 {
 }
 
@@ -55,6 +59,8 @@ CPNUIPlugin::~CPNUIPlugin()
     // root object) and tell the host to free the retained JSAPI objects then
     // unless you are holding another shared_ptr reference to your JSAPI object
     // they will be released here.
+    m_JSAPI.reset();
+    m_pluginReady = true;
     releaseRootJSAPI();
     m_host->freeRetainedObjects();
 }
@@ -65,6 +71,44 @@ void CPNUIPlugin::onPluginReady()
     // created, and we are ready to interact with the page and such.  The
     // PluginWindow may or may not have already fire the AttachedEvent at
     // this point.
+
+    m_pluginReady = true;
+    m_NUIAvailable = false;
+
+    XnStatus rc;
+
+	// Create a context with default settings
+	rc = m_context.Init();
+	if (rc != XN_STATUS_OK)
+	{
+		//printf("Open failed: %s\n", xnGetStatusString(rc));
+		return;
+	}
+
+	rc = m_context.RunXmlScript(SampleConfig, m_scriptNode/*, &errors*/);
+	if (rc == XN_STATUS_NO_NODE_PRESENT)
+	{
+		/*XnChar strError[1024];
+		errors.ToString(strError, 1024);
+		printf("%s\n", strError);*/
+		return;
+	}
+	else if (rc != XN_STATUS_OK)
+	{
+		//printf("Open failed: %s\n", xnGetStatusString(rc));
+		return;
+	}
+
+	rc = m_context.FindExistingNode(XN_NODE_TYPE_DEPTH, m_depth);
+	if (rc != XN_STATUS_OK)
+	{
+		//printf("No depth node exists! Check your XML.");
+		return;
+	}
+
+	m_depth.GetMetaData(m_depthMD);
+
+	m_NUIAvailable = true;
 }
 
 void CPNUIPlugin::shutdown()
@@ -90,7 +134,12 @@ void CPNUIPlugin::shutdown()
 FB::JSAPIPtr CPNUIPlugin::createJSAPI()
 {
     // m_host is the BrowserHost
-    return boost::make_shared<CPNUIPluginAPI>(FB::ptr_cast<CPNUIPlugin>(shared_from_this()), m_host);
+    boost::shared_ptr<CPNUIPluginAPI> SharedPtr =
+		boost::make_shared<CPNUIPluginAPI>(
+			FB::ptr_cast<CPNUIPlugin>(shared_from_this()), m_host);
+    m_JSAPI = boost::weak_ptr<CPNUIPluginAPI>(SharedPtr);
+
+    return SharedPtr;
 }
 
 bool CPNUIPlugin::onMouseDown(FB::MouseDownEvent *evt, FB::PluginWindow *)

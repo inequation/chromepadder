@@ -31,19 +31,7 @@ public:
     CPNUIPluginAPI(const CPNUIPluginPtr& plugin, const FB::BrowserHostPtr& host) :
         m_plugin(plugin), m_host(host)
     {
-        registerMethod("echo",      make_method(this, &CPNUIPluginAPI::echo));
-        registerMethod("testEvent", make_method(this, &CPNUIPluginAPI::testEvent));
-        
-        // Read-write property
-        registerProperty("testString",
-                         make_property(this,
-                                       &CPNUIPluginAPI::get_testString,
-                                       &CPNUIPluginAPI::set_testString));
-        
-        // Read-only property
-        registerProperty("version",
-                         make_property(this,
-                                       &CPNUIPluginAPI::get_version));
+        registerMethod("isNUIAvailable", make_method(this, &CPNUIPluginAPI::isNUIAvailable));
     }
 
     ///////////////////////////////////////////////////////////////////////////////
@@ -57,22 +45,10 @@ public:
 
     CPNUIPluginPtr getPlugin();
 
-    // Read/Write property ${PROPERTY.ident}
-    std::string get_testString();
-    void set_testString(const std::string& val);
+    bool isNUIAvailable();
 
-    // Read-only property ${PROPERTY.ident}
-    std::string get_version();
-
-    // Method echo
-    FB::variant echo(const FB::variant& msg);
-    
     // Event helpers
-    FB_JSAPI_EVENT(test, 0, ());
-    FB_JSAPI_EVENT(echo, 2, (const FB::variant&, const int));
-
-    // Method test-event
-    void testEvent();
+    FB_JSAPI_EVENT(gestureRecognized, 0, (const unsigned int hand, const std::string gesture));
 
 private:
     CPNUIPluginWeakPtr m_plugin;

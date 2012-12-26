@@ -15,6 +15,10 @@
 
 #include "PluginCore.h"
 
+// OpenNI includes
+#include <XnOS.h>
+
+#include "NiHandTracker.h"
 
 FB_FORWARD_PTR(CPNUIPlugin)
 class CPNUIPlugin : public FB::PluginCore
@@ -37,6 +41,18 @@ public:
     // FB::PluginCore::isWindowless()
     virtual bool isWindowless() { return false; }
 
+    inline class CPNUIPluginAPI *getJSAPI()
+    {
+		if (!m_pluginReady)
+			return NULL;
+		boost::shared_ptr<CPNUIPluginAPI> SharedPtr = m_JSAPI.lock();
+		return m_pluginReady ? SharedPtr.get() : NULL;
+	}
+	bool isNUIAvailable()
+	{
+		return m_NUIAvailable;
+	}
+
     BEGIN_PLUGIN_EVENT_MAP()
         EVENTTYPE_CASE(FB::MouseDownEvent, onMouseDown, FB::PluginWindow)
         EVENTTYPE_CASE(FB::MouseUpEvent, onMouseUp, FB::PluginWindow)
@@ -53,6 +69,18 @@ public:
     virtual bool onWindowAttached(FB::AttachedEvent *evt, FB::PluginWindow *);
     virtual bool onWindowDetached(FB::DetachedEvent *evt, FB::PluginWindow *);
     /** END EVENTDEF -- DON'T CHANGE THIS LINE **/
+
+private:
+	boost::weak_ptr<class CPNUIPluginAPI>	m_JSAPI;
+	bool					m_pluginReady;
+	bool					m_NUIAvailable;
+
+	xn::Context				m_context;
+	xn::ScriptNode			m_scriptNode;
+
+	HandTracker				*m_handTracker;
+	xn::DepthGenerator		m_depth;
+	xn::DepthMetaData		m_depthMD;
 };
 
 

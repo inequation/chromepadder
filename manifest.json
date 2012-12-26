@@ -31,6 +31,6 @@
     }
   ],
   "plugins": [
-    { "path": "kinectplugin/libcpkinect.so" }
+    { "path": "npCPNUIPlugin.so" }
   ]
 }
