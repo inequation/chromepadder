@@ -48,7 +48,10 @@ public:
     bool isNUIAvailable();
 
     // Event helpers
-    FB_JSAPI_EVENT(gestureRecognized, 0, (const unsigned int hand, const std::string gesture));
+    FB_JSAPI_EVENT(gestureRecognized, 2, (const unsigned int, const std::string&));
+    FB_JSAPI_EVENT(handCreated, 1, (const unsigned int));
+    FB_JSAPI_EVENT(handDestroyed, 1, (const unsigned int));
+    FB_JSAPI_EVENT(handMove, 2, (const unsigned int, const std::vector<float>&));
 
 private:
     CPNUIPluginWeakPtr m_plugin;

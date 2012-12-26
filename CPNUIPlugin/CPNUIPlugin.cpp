@@ -81,32 +81,47 @@ void CPNUIPlugin::onPluginReady()
 	rc = m_context.Init();
 	if (rc != XN_STATUS_OK)
 	{
-		//printf("Open failed: %s\n", xnGetStatusString(rc));
+		printf("Open failed: %s\n", xnGetStatusString(rc));
 		return;
 	}
 
-	rc = m_context.RunXmlScript(SampleConfig, m_scriptNode/*, &errors*/);
+	xn::EnumerationErrors	errors;
+	rc = m_context.RunXmlScript(SampleConfig, m_scriptNode, &errors);
 	if (rc == XN_STATUS_NO_NODE_PRESENT)
 	{
-		/*XnChar strError[1024];
+		XnChar strError[1024];
 		errors.ToString(strError, 1024);
-		printf("%s\n", strError);*/
+		printf("%s\n", strError);
 		return;
 	}
 	else if (rc != XN_STATUS_OK)
 	{
-		//printf("Open failed: %s\n", xnGetStatusString(rc));
+		printf("Open failed: %s\n", xnGetStatusString(rc));
 		return;
 	}
 
 	rc = m_context.FindExistingNode(XN_NODE_TYPE_DEPTH, m_depth);
 	if (rc != XN_STATUS_OK)
 	{
-		//printf("No depth node exists! Check your XML.");
+		printf("No depth node exists! Check your XML.");
 		return;
 	}
 
 	m_depth.GetMetaData(m_depthMD);
+
+	m_handTracker = new HandTracker(m_context);
+
+	rc = m_handTracker->Init();
+	if(rc != XN_STATUS_OK)
+	{
+		return;
+	}
+
+	rc = m_handTracker->Run();
+	if(rc != XN_STATUS_OK)
+	{
+		return;
+	}
 
 	m_NUIAvailable = true;
 }
@@ -118,6 +133,10 @@ void CPNUIPlugin::shutdown()
     // object should be released here so that this object can be safely
     // destroyed. This is the last point that shared_from_this and weak_ptr
     // references to this object will be valid
+
+    delete m_handTracker;
+    m_handTracker = NULL;
+    m_NUIAvailable = false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -138,6 +157,12 @@ FB::JSAPIPtr CPNUIPlugin::createJSAPI()
 		boost::make_shared<CPNUIPluginAPI>(
 			FB::ptr_cast<CPNUIPlugin>(shared_from_this()), m_host);
     m_JSAPI = boost::weak_ptr<CPNUIPluginAPI>(SharedPtr);
+
+	printf("JSAPI created\n");
+
+	// start the OpenNI thread
+	boost::thread OpenNI(boost::bind(CPNUIPlugin::OpenNIThread, m_JSAPI,
+		m_context));
 
     return SharedPtr;
 }
@@ -171,3 +196,23 @@ bool CPNUIPlugin::onWindowDetached(FB::DetachedEvent *evt, FB::PluginWindow *)
     return false;
 }
 
+void CPNUIPlugin::OpenNIThread(boost::weak_ptr<CPNUIPluginAPI> JSAPI,
+	xn::Context& Context)
+{
+	printf("Started OpenNI thread\n");
+
+	extern boost::weak_ptr<CPNUIPluginAPI> GJSAPI;
+	GJSAPI = JSAPI;
+
+	while (!JSAPI.expired())
+	{
+		XnStatus rc = Context.WaitAnyUpdateAll();
+		if (rc != XN_STATUS_OK)
+		{
+			printf("Read failed: %s\n", xnGetStatusString(rc));
+			//m_NUIAvailable = false;
+			return;
+		}
+	}
+	printf("JSAPI pointer expired!\n");
+}

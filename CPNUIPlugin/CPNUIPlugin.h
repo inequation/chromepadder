@@ -39,7 +39,7 @@ public:
     // If you want your plugin to be optionally windowless based on the
     // value of the "windowless" param tag, remove this method or return
     // FB::PluginCore::isWindowless()
-    virtual bool isWindowless() { return false; }
+    virtual bool isWindowless() { return true; }
 
     inline class CPNUIPluginAPI *getJSAPI()
     {
@@ -81,6 +81,9 @@ private:
 	HandTracker				*m_handTracker;
 	xn::DepthGenerator		m_depth;
 	xn::DepthMetaData		m_depthMD;
+
+	static void OpenNIThread(boost::weak_ptr<class CPNUIPluginAPI> JSAPI,
+		xn::Context& Context);
 };
 
 

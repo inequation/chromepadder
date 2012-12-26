@@ -30,6 +30,9 @@
 
 using namespace xn;
 
+#include "CPNUIPluginAPI.h"
+boost::weak_ptr<CPNUIPluginAPI> GJSAPI;
+
 
 //---------------------------------------------------------------------------
 // Defines
@@ -81,12 +84,13 @@ void XN_CALLBACK_TYPE HandTracker::Gesture_Recognized(	xn::GestureGenerator&	/*g
 	}
 	else
 	{
-		XnUserID ClosestHand = -1;
+		XnUserID ClosestHand = 0;
 		XnFloat ClosestDistance = std::numeric_limits<XnFloat>::infinity();
 		const TrailHistory::ConstIterator HEnd = pThis->m_History.End();
+		int Index = 0;
 		for (TrailHistory::ConstIterator HIt = pThis->m_History.Begin();
 			HIt != HEnd;
-			++HIt)
+			++HIt, ++Index)
 		{
 			const Trail& Tr = HIt->Value();
 			const XnPoint3D LastPoint = Tr.Top();
@@ -101,11 +105,11 @@ void XN_CALLBACK_TYPE HandTracker::Gesture_Recognized(	xn::GestureGenerator&	/*g
 			if (ClosestDistance > Dist)
 			{
 				ClosestDistance = Dist;
-				ClosestHand = HIt->Key();
+				ClosestHand = Index;
 			}
 		}
-		if (ClosestHand != -1)
-			printf("Detected hand %d with distance %f\n", ClosestHand, ClosestDistance);
+		boost::shared_ptr<CPNUIPluginAPI> SharedPtr = GJSAPI.lock();
+		SharedPtr->fire_gestureRecognized(ClosestHand, strGesture);
 	}
 
 	pThis->m_HandsGenerator.StartTracking(*pEndPosition);
@@ -117,9 +121,7 @@ enum CPGestureState
 	GS_SWIPE_LEFT,
 	GS_SWIPE_RIGHT,
 	GS_SWIPE_UP,
-	GS_SWIPE_DOWN,
-	GS_CIRCLE_CW,
-	GS_CIRCLE_CCW
+	GS_SWIPE_DOWN
 };
 
 struct CPUserState
@@ -177,7 +179,20 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Update(	xn::HandsGenerator& generator,
 
 	it->Value().Push(*pPosition);
 
+	// fire JS event
+	if (!GJSAPI.expired())
+	{
+		boost::shared_ptr<CPNUIPluginAPI> SharedPtr = GJSAPI.lock();
+		std::vector<float> Coords(3);
+		Coords[0] = pPosition->X;
+		Coords[1] = pPosition->Y;
+		Coords[2] = pPosition->Z;
+		printf("FIXME: sequential hand ID!\n");
+		SharedPtr->fire_handMove(0, Coords);
+	}
+
 	// ========================================================================
+	// lgodlewski: gesture detection
 
 	XnHashT<XnUserID, CPUserState>::Iterator USIt = GUserStates.Find(nId);
 	CPUserState& UserState = USIt->Value();
@@ -187,50 +202,6 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Update(	xn::HandsGenerator& generator,
 	const Trail::ConstIterator tstart = trail.Begin();
 	const Trail::ConstIterator tend = trail.End();
 
-	// lgodlewski: attempt to detect circles
-	XnPoint3D Mins = {9999999, 9999999, 9999999},
-				Maxs = {-9999999, -9999999, -9999999};
-	for (Trail::ConstIterator tit = tstart; tit != tend; ++tit)
-	{
-		XnPoint3D Point = *tit;
-		Mins.X = std::min(Mins.X, Point.X);
-		Mins.Y = std::min(Mins.Y, Point.Y);
-		Mins.Z = std::min(Mins.Z, Point.Z);
-		Maxs.X = std::max(Maxs.X, Point.X);
-		Maxs.Y = std::max(Maxs.Y, Point.Y);
-		Maxs.Z = std::max(Maxs.Z, Point.Z);
-	}
-	const float AvgRadius = 0.5 * (Maxs.X - Mins.X + Maxs.Y - Mins.Y) - 50.f;
-	//printf("AvgRadius = %f\n", AvgRadius);
-	if (AvgRadius > 100.f)
-	{
-		XnPoint3D Centre = {
-			0.5 * (Mins.X + Maxs.X),
-			0.5 * (Mins.Y + Maxs.Y),
-			0.5 * (Mins.Z + Maxs.Z)
-		};
-		float StdDeviation = 0;
-		for (Trail::ConstIterator tit = tstart; tit != tend; ++tit)
-		{
-			XnPoint3D Point = *tit;
-			XnPoint3D Diff = {
-				(Point.X - Centre.X),
-				(Point.Y - Centre.Y),
-				(Point.Z - Centre.Z)
-			};
-			const float Dist = sqrtf(Diff.X * Diff.X +
-									Diff.Y * Diff.Y/* +
-									Diff.Z * Diff.Z*/);
-			const float DiffFromMean = Dist - AvgRadius;
-			StdDeviation += DiffFromMean * DiffFromMean;
-		}
-		StdDeviation = sqrtf(1.f / (MAX_HAND_TRAIL_LENGTH - 1.f) * StdDeviation);
-		//printf("Average %8.3f StdDev %8.3f\n", AvgDistance, StdDeviation);
-		if (StdDeviation < 30.f)
-			DetectedGesture = GS_CIRCLE_CW;
-	}
-
-	// lgodlewski: try to detect swipes
 	const int SWIPE_LENGTH = 7;
 
 	int CrumbIndex = 0;
@@ -266,13 +237,10 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Update(	xn::HandsGenerator& generator,
 	const bool bVerticalSwipe = VelSize > 20.f
 								&& fabsf(Velocity.X) < 5.f
 								&& fabsf(Velocity.Y) > 30.f;
-	if (DetectedGesture == GS_NONE)
-	{
-		if (bHorizontalSwipe)
-			DetectedGesture = Velocity.X > 0.f ? GS_SWIPE_LEFT : GS_SWIPE_RIGHT;
-		else if (bVerticalSwipe)
-			DetectedGesture = Velocity.Y > 0.f ? GS_SWIPE_DOWN : GS_SWIPE_UP;
-	}
+	if (bHorizontalSwipe)
+		DetectedGesture = Velocity.X > 0.f ? GS_SWIPE_LEFT : GS_SWIPE_RIGHT;
+	else if (bVerticalSwipe)
+		DetectedGesture = Velocity.Y > 0.f ? GS_SWIPE_DOWN : GS_SWIPE_UP;
 
 	// gesture state transitions
 	bool bIssueGesture = false;
@@ -283,9 +251,7 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Update(	xn::HandsGenerator& generator,
 	}
 	else
 	{
-		bIssueGesture = ((DetectedGesture == GS_CIRCLE_CW
-				|| DetectedGesture == GS_CIRCLE_CCW)
-				&& DetectedGesture != UserState.GestureState)
+		bIssueGesture = DetectedGesture != UserState.GestureState
 			|| (UserState.GestureState != GS_NONE
 				&& UserState.GestureState != DetectedGesture);
 		UserState.NonGestureFrameCount = 0;
@@ -301,8 +267,6 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Update(	xn::HandsGenerator& generator,
 			case GS_SWIPE_RIGHT:	GestureString = "SwipeRight";	break;
 			case GS_SWIPE_UP:		GestureString = "SwipeUp";		break;
 			case GS_SWIPE_DOWN:		GestureString = "SwipeDown";	break;
-			case GS_CIRCLE_CW:		GestureString = "CircleCW";		break;
-			case GS_CIRCLE_CCW:		GestureString = "CircleCCW";	break;
 			default:				GestureString = "Unknown";		break;
 		}
 		Gesture_Recognized((*HandTracker::sm_Instances.Begin())->m_GestureGenerator, GestureString, pPosition, pPosition, pCookie);
@@ -317,8 +281,6 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Update(	xn::HandsGenerator& generator,
 		case GS_SWIPE_RIGHT:	printf("SWIPE RIGHT!\n");	break;
 		case GS_SWIPE_UP:		printf("SWIPE UP!\n");		break;
 		case GS_SWIPE_DOWN:		printf("SWIPE DOWN!\n");	break;
-		case GS_CIRCLE_CW:		printf("CIRCLE CW!\n");		break;
-		case GS_CIRCLE_CCW:		printf("CIRCLE CCW!\n");	break;
 		default:				//printf("NO SWIPE!\n");		break;
 	}*/
 }
@@ -402,6 +364,7 @@ XnStatus HandTracker::Init()
 		return rc;
 	}
 
+	printf("Callbacks successfully registered\n");
 	return XN_STATUS_OK;
 }
 
