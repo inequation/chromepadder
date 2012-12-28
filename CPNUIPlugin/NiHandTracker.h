@@ -27,7 +27,7 @@
 #include <XnHashT.h>
 
 // Hand position history length (positions)
-#define MAX_HAND_TRAIL_LENGTH	20
+#define MAX_HAND_TRAIL_LENGTH	10
 
 typedef XnCyclicStackT<XnPoint3D, MAX_HAND_TRAIL_LENGTH> Trail;
 typedef XnHashT<XnUserID, Trail> TrailHistory;
@@ -76,6 +76,20 @@ private:
 	xn::HandsGenerator		m_HandsGenerator;
 
 	static XnListT<HandTracker*>	sm_Instances;	// Living instances of the class
+
+	inline int GetSequentialHandID(XnUserID InternalID)
+	{
+		int Index = 0;
+		const TrailHistory::ConstIterator HEnd = m_History.End();
+		for (TrailHistory::ConstIterator HIt = m_History.Begin();
+			HIt != HEnd;
+			++HIt, ++Index)
+		{
+			if (HIt->Key() == InternalID)
+				return Index;
+		}
+		return 0;
+	}
 
 private:
 	XN_DISABLE_COPY_AND_ASSIGN(HandTracker);

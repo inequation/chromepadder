@@ -64,13 +64,12 @@ static const char* const	cGestures[] =
 //---------------------------------------------------------------------------
 XnListT<HandTracker*>	HandTracker::sm_Instances;
 
-
 //---------------------------------------------------------------------------
 // Hooks
 //---------------------------------------------------------------------------
 void XN_CALLBACK_TYPE HandTracker::Gesture_Recognized(	xn::GestureGenerator&	/*generator*/,
 														const XnChar*			strGesture,
-														const XnPoint3D*		/*pIDPosition*/,
+														const XnPoint3D*		pIDPosition,
 														const XnPoint3D*		pEndPosition,
 														void*					pCookie)
 {
@@ -108,8 +107,19 @@ void XN_CALLBACK_TYPE HandTracker::Gesture_Recognized(	xn::GestureGenerator&	/*g
 				ClosestHand = Index;
 			}
 		}
-		boost::shared_ptr<CPNUIPluginAPI> SharedPtr = GJSAPI.lock();
-		SharedPtr->fire_gestureRecognized(ClosestHand, strGesture);
+		if (!GJSAPI.expired())
+		{
+			std::vector<float> IDPos(3), EndPos(3);
+			IDPos[0] = pIDPosition->X;
+			IDPos[1] = pIDPosition->Y;
+			IDPos[2] = pIDPosition->Z;
+			EndPos[0] = pEndPosition->X;
+			EndPos[1] = pEndPosition->Y;
+			EndPos[2] = pEndPosition->Z;
+			boost::shared_ptr<CPNUIPluginAPI> SharedPtr = GJSAPI.lock();
+			SharedPtr->fire_gestureRecognized(ClosestHand, strGesture, IDPos,
+				EndPos);
+		}
 	}
 
 	pThis->m_HandsGenerator.StartTracking(*pEndPosition);
@@ -154,6 +164,30 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Create(	xn::HandsGenerator& /*generator*
 
 	pThis->m_History[nId].Push(*pPosition);
 	GUserStates[nId] = CPUserState();
+
+	// fire JS event
+	if (!GJSAPI.expired())
+	{
+		std::vector<float> Coords(3);
+		Coords[0] = pPosition->X;
+		Coords[1] = pPosition->Y;
+		Coords[2] = pPosition->Z;
+		boost::shared_ptr<CPNUIPluginAPI> SharedPtr = GJSAPI.lock();
+		SharedPtr->fire_handCreated(pThis->GetSequentialHandID(nId), Coords);
+	}
+}
+
+static inline const char *GetGestureStringForState(CPGestureState State)
+{
+	switch (State)
+	{
+		case GS_NONE:			return "None";
+		case GS_SWIPE_LEFT:		return "SwipeLeft";
+		case GS_SWIPE_RIGHT:	return "SwipeRight";
+		case GS_SWIPE_UP:		return "SwipeUp";
+		case GS_SWIPE_DOWN:		return "SwipeDown";
+		default:				return "Unknown";
+	}
 }
 
 void XN_CALLBACK_TYPE HandTracker::Hand_Update(	xn::HandsGenerator& generator,
@@ -182,13 +216,12 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Update(	xn::HandsGenerator& generator,
 	// fire JS event
 	if (!GJSAPI.expired())
 	{
-		boost::shared_ptr<CPNUIPluginAPI> SharedPtr = GJSAPI.lock();
 		std::vector<float> Coords(3);
 		Coords[0] = pPosition->X;
 		Coords[1] = pPosition->Y;
 		Coords[2] = pPosition->Z;
-		printf("FIXME: sequential hand ID!\n");
-		SharedPtr->fire_handMove(0, Coords);
+		boost::shared_ptr<CPNUIPluginAPI> SharedPtr = GJSAPI.lock();
+		SharedPtr->fire_handMove(pThis->GetSequentialHandID(nId), Coords);
 	}
 
 	// ========================================================================
@@ -202,12 +235,9 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Update(	xn::HandsGenerator& generator,
 	const Trail::ConstIterator tstart = trail.Begin();
 	const Trail::ConstIterator tend = trail.End();
 
-	const int SWIPE_LENGTH = 7;
-
-	int CrumbIndex = 0;
 	XnPoint3D Velocity = {0, 0, 0};
 	XnPoint3D PreviousPoint = *tstart;
-	for (Trail::ConstIterator tit = tstart; tit != tend && CrumbIndex < SWIPE_LENGTH; ++tit)
+	for (Trail::ConstIterator tit = tstart; tit != tend; ++tit)
 	{
 		XnPoint3D Point = *tit;
 		XnPoint3D FrameDiff;
@@ -220,23 +250,18 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Update(	xn::HandsGenerator& generator,
 		Velocity.X += FrameDiff.X;
 		Velocity.Y += FrameDiff.Y;
 		Velocity.Z += FrameDiff.Z;
-		++CrumbIndex;
 	}
 
-	Velocity.X /= SWIPE_LENGTH;
-	Velocity.Y /= SWIPE_LENGTH;
-	Velocity.Z /= SWIPE_LENGTH;
-	const float VelSize = sqrtf(Velocity.X * Velocity.X +
-								Velocity.Y * Velocity.Y +
-								Velocity.Z * Velocity.Z);
-	//printf("Velocity %f (%f %f %f)\n", VelSize, Velocity.X, Velocity.Y, Velocity.Z);
+	Velocity.X /= MAX_HAND_TRAIL_LENGTH;
+	Velocity.Y /= MAX_HAND_TRAIL_LENGTH;
+	Velocity.Z /= MAX_HAND_TRAIL_LENGTH;
+	/*printf("Velocity %f (%f %f %f)\n", VelSize,
+		Velocity.X, Velocity.Y, Velocity.Z);*/
 
-	const bool bHorizontalSwipe = VelSize > 20.f
-								&& fabsf(Velocity.X) > 30.f
-								&& fabsf(Velocity.Y) < 5.f;
-	const bool bVerticalSwipe = VelSize > 20.f
-								&& fabsf(Velocity.X) < 5.f
-								&& fabsf(Velocity.Y) > 30.f;
+	const bool bHorizontalSwipe =	fabsf(Velocity.X) > 30.f &&
+									fabsf(Velocity.Y) < 5.f;
+	const bool bVerticalSwipe = 	fabsf(Velocity.X) < 5.f &&
+									fabsf(Velocity.Y) > 30.f;
 	if (bHorizontalSwipe)
 		DetectedGesture = Velocity.X > 0.f ? GS_SWIPE_LEFT : GS_SWIPE_RIGHT;
 	else if (bVerticalSwipe)
@@ -244,45 +269,36 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Update(	xn::HandsGenerator& generator,
 
 	// gesture state transitions
 	bool bIssueGesture = false;
+	/*if (UserState.GestureState != DetectedGesture)
+		printf("%s -> %s (%d)\n",
+			GetGestureStringForState(UserState.GestureState),
+			GetGestureStringForState(DetectedGesture),
+			UserState.NonGestureFrameCount);*/
 	if (DetectedGesture == GS_NONE)
 	{
-		bIssueGesture = UserState.GestureState != GS_NONE
-			&& ++UserState.NonGestureFrameCount > 3;
+		if (++UserState.NonGestureFrameCount > 3)
+			UserState.GestureState = GS_NONE;
 	}
 	else
 	{
-		bIssueGesture = DetectedGesture != UserState.GestureState
-			|| (UserState.GestureState != GS_NONE
-				&& UserState.GestureState != DetectedGesture);
+		bIssueGesture = UserState.GestureState == GS_NONE
+			? (UserState.NonGestureFrameCount > 3)
+			: (UserState.GestureState != DetectedGesture);
 		UserState.NonGestureFrameCount = 0;
 	}
 	if (bIssueGesture)
 	{
-		const XnChar *GestureString;
 		if (UserState.GestureState == GS_NONE)
 			UserState.GestureState = DetectedGesture;
-		switch (UserState.GestureState)
-		{
-			case GS_SWIPE_LEFT:		GestureString = "SwipeLeft";	break;
-			case GS_SWIPE_RIGHT:	GestureString = "SwipeRight";	break;
-			case GS_SWIPE_UP:		GestureString = "SwipeUp";		break;
-			case GS_SWIPE_DOWN:		GestureString = "SwipeDown";	break;
-			default:				GestureString = "Unknown";		break;
-		}
-		Gesture_Recognized((*HandTracker::sm_Instances.Begin())->m_GestureGenerator, GestureString, pPosition, pPosition, pCookie);
+		const XnChar *GestureString =
+			GetGestureStringForState(UserState.GestureState);
+		Gesture_Recognized(
+			(*HandTracker::sm_Instances.Begin())->m_GestureGenerator,
+			GestureString, pPosition, pPosition, pCookie);
 		UserState.GestureState = DetectedGesture;
 	}
 	else if (UserState.GestureState == GS_NONE)
 		UserState.GestureState = DetectedGesture;
-
-	/*switch (DetectedSwipe)
-	{
-		case GS_SWIPE_LEFT:		printf("SWIPE LEFT!\n");	break;
-		case GS_SWIPE_RIGHT:	printf("SWIPE RIGHT!\n");	break;
-		case GS_SWIPE_UP:		printf("SWIPE UP!\n");		break;
-		case GS_SWIPE_DOWN:		printf("SWIPE DOWN!\n");	break;
-		default:				//printf("NO SWIPE!\n");		break;
-	}*/
 }
 
 void XN_CALLBACK_TYPE HandTracker::Hand_Destroy(	xn::HandsGenerator& /*generator*/,
@@ -297,6 +313,13 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Destroy(	xn::HandsGenerator& /*generator
 	{
 		printf("Dead HandTracker: skipped!\n");
 		return;
+	}
+
+	// fire JS event
+	if (!GJSAPI.expired())
+	{
+		boost::shared_ptr<CPNUIPluginAPI> SharedPtr = GJSAPI.lock();
+		SharedPtr->fire_handDestroyed(pThis->GetSequentialHandID(nId));
 	}
 
 	// Remove this user from hands history

@@ -196,6 +196,14 @@ bool CPNUIPlugin::onWindowDetached(FB::DetachedEvent *evt, FB::PluginWindow *)
     return false;
 }
 
+unsigned int CPNUIPlugin::getNumHands()
+{
+	if (!m_pluginReady || !m_NUIAvailable || !m_handTracker)
+		return 0;
+
+	return m_handTracker->GetHistory().Size();
+}
+
 void CPNUIPlugin::OpenNIThread(boost::weak_ptr<CPNUIPluginAPI> JSAPI,
 	xn::Context& Context)
 {

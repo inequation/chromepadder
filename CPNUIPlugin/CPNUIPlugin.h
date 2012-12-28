@@ -48,10 +48,13 @@ public:
 		boost::shared_ptr<CPNUIPluginAPI> SharedPtr = m_JSAPI.lock();
 		return m_pluginReady ? SharedPtr.get() : NULL;
 	}
+
 	bool isNUIAvailable()
 	{
 		return m_NUIAvailable;
 	}
+
+	unsigned int getNumHands();
 
     BEGIN_PLUGIN_EVENT_MAP()
         EVENTTYPE_CASE(FB::MouseDownEvent, onMouseDown, FB::PluginWindow)

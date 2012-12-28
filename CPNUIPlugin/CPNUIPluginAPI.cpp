@@ -24,6 +24,16 @@ bool CPNUIPluginAPI::isNUIAvailable()
 	return true;
 }
 
+unsigned int CPNUIPluginAPI::getNumHands()
+{
+	try
+	{
+		return getPlugin()->getNumHands();
+	}
+	catch (FB::script_error ex) {}
+	return 0;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 /// @fn CPNUIPluginPtr CPNUIPluginAPI::getPlugin()
 ///

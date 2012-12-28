@@ -66,8 +66,28 @@ ChromePadder.onMessageFromTab = function(message) {
     }
 }
 
+ChromePadder.activate = function()
+{
+    console.log('Activating');
+    ChromePadder.state = 'active';
+
+    // detect currently active tab and connect to its port
+    chrome.windows.getLastFocused({populate: true},
+        function (theWindow) {
+            chrome.tabs.query({active: true, windowId: theWindow.id},
+                function(tabArray) {
+                    ChromePadder.connect(tabArray[0].id);
+                });
+        });
+
+    // subscribe to tab activation events to always be up-to-date
+    chrome.tabs.onActivated.addListener(function (activeInfo) {
+        ChromePadder.connect(activeInfo.tabId);
+    });
+}
+
 ChromePadder.main = function() {
-    // wait for gamepad.js to load
+    // wait for gamepad.js and the NUI plugin to load
     if (Gamepad === undefined || NUIPlugin === null) {
         // attempt to retrieve the plugin
         if (NUIPlugin === null)
@@ -97,10 +117,13 @@ ChromePadder.main = function() {
     if (NUIPlugin && NUIPlugin.isNUIAvailable()) {
         // NUI control
         //console.log('NUI is available!');
+        ChromePadder.activate();
         // register event callbacks
         NUIPlugin.addEventListener("gestureRecognized",
-            function (handId, gesture) {
-                console.log("Received gesture of hand #" + handId + ": " + gesture);
+            function (handId, gesture, idPos, endPos) {
+                console.log("Received gesture of hand #" + handId + "/"
+                    + NUIPlugin.getNumHands() + " " + gesture + " at "
+                    + JSON.stringify(endPos));
             }, false);
     } else {
         // gamepad control
@@ -109,24 +132,9 @@ ChromePadder.main = function() {
 
         if (ChromePadder.state == 'standby') {
             //console.log('Standby frame');
-            if (pad) {
-                console.log('Activating');
-                ChromePadder.state = 'active';
-
-                // detect currently active tab and connect to its port
-                chrome.windows.getLastFocused({populate: true},
-                    function (theWindow) {
-                        chrome.tabs.query({active: true, windowId: theWindow.id},
-                            function(tabArray) {
-                                ChromePadder.connect(tabArray[0].id);
-                            });
-                    });
-
-                // subscribe to tab activation events to always be up-to-date
-                chrome.tabs.onActivated.addListener(function (activeInfo) {
-                    ChromePadder.connect(activeInfo.tabId);
-                });
-            } else
+            if (pad)
+                ChromePadder.activate();
+            else
                 // reschedule another frame
                 setTimeout(ChromePadder.main, 1000 / ChromePadder.standbyFPS);
         }

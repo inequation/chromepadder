@@ -32,6 +32,7 @@ public:
         m_plugin(plugin), m_host(host)
     {
         registerMethod("isNUIAvailable", make_method(this, &CPNUIPluginAPI::isNUIAvailable));
+        registerMethod("getNumHands", make_method(this, &CPNUIPluginAPI::getNumHands));
     }
 
     ///////////////////////////////////////////////////////////////////////////////
@@ -46,10 +47,13 @@ public:
     CPNUIPluginPtr getPlugin();
 
     bool isNUIAvailable();
+    unsigned int getNumHands();
 
     // Event helpers
-    FB_JSAPI_EVENT(gestureRecognized, 2, (const unsigned int, const std::string&));
-    FB_JSAPI_EVENT(handCreated, 1, (const unsigned int));
+    FB_JSAPI_EVENT(gestureRecognized, 4, (const unsigned int,
+		const std::string&, const std::vector<float>&,
+		const std::vector<float>&));
+    FB_JSAPI_EVENT(handCreated, 2, (const unsigned int, const std::vector<float>&));
     FB_JSAPI_EVENT(handDestroyed, 1, (const unsigned int));
     FB_JSAPI_EVENT(handMove, 2, (const unsigned int, const std::vector<float>&));
 
