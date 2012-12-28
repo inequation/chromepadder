@@ -4,7 +4,7 @@
 var CPI = {};
 
 // configuration
-CPI.crosshairCentered = false;
+CPI.crosshairCentered = true;
 CPI.reticlePath = chrome.extension.getURL('crosshairs/circle/circle-06.png');
 
 function clamp(val, min, max){
@@ -268,6 +268,7 @@ chrome.extension.onConnect.addListener(function(port) {
     
     CPI.port = port;
     port.onMessage.addListener(function(message) {
+        //console.log("Message: " + JSON.stringify(message));
         // parse the init message
         if (message.tabId !== undefined) {
             // keep our tab ID for future reference

@@ -8,6 +8,11 @@ ChromePadder.standbyFPS = 5;
 ChromePadder.activeFPS = 30;
 ChromePadder.scrollSpeed = 200;
 ChromePadder.zoomSpeed = 0.05;
+ChromePadder.NUIActivationPlaneOffset = 150.0;  // milimetres
+ChromePadder.NUIScrollSpeed = 3;
+ChromePadder.NUIZoomSpeed = 0.005;
+ChromePadder.NUINoiseThreshold = 2.0;
+ChromePadder.NUISimultGestureTimeout = 500;     // milliseconds
 
 ChromePadder.cycleTab = function(forward) {
     chrome.windows.getLastFocused({populate: true},
@@ -66,8 +71,33 @@ ChromePadder.onMessageFromTab = function(message) {
     }
 }
 
-ChromePadder.activate = function()
-{
+ChromePadder.dispatchAmbiguousGestures = function() {
+    for (var i = 0; i < ChromePadder.hands.length; ++i) {
+        while (ChromePadder.hands[i].gestures.length > 0) {
+            var gestureObj = ChromePadder.hands[i].gestures.pop();
+            switch (gestureObj.gesture) {
+                case "SwipeLeft":
+                    ChromePadder.cycleTab(false);
+                    break;
+                case "SwipeRight":
+                    ChromePadder.cycleTab(true);
+                    break;
+                case "SwipeUp":
+                    try {
+                        ChromePadder.port.postMessage({historyGo: 1});
+                    } catch (e) {}
+                    break;
+                case "SwipeDown":
+                    try {
+                        ChromePadder.port.postMessage({historyGo: -1});
+                    } catch (e) {}
+                    break;
+            }
+        }
+    }
+}
+
+ChromePadder.activate = function() {
     console.log('Activating');
     ChromePadder.state = 'active';
 
@@ -101,7 +131,7 @@ ChromePadder.main = function() {
     if (!Gamepad.supported && !NUIPlugin.isNUIAvailable()) {
         var notification = webkitNotifications.createNotification(
             'icon.png',
-            'Neither gamepad nor NUI is available!',
+            'Neither gamepad nor NUI available!',
             'Make sure gamepad support is enabled in chrome://flags and/or the '
                 + 'NUI device is connected and set up properly and restart the '
                 + 'extension.');
@@ -118,12 +148,194 @@ ChromePadder.main = function() {
         // NUI control
         //console.log('NUI is available!');
         ChromePadder.activate();
+
+        ChromePadder.hands = [];
+        
         // register event callbacks
+
+        // hand destruction
+        NUIPlugin.addEventListener("handDestroyed", function (handId) {
+            // if this was the last active hand, clear the activation plane
+            // setting
+            if (NUIPlugin.getNumHands() == 1)
+                ChromePadder.activationPlane = undefined;
+            if (ChromePadder.hands[handId] !== undefined)
+                ChromePadder.hands[handId] = undefined;
+        });
+
+        // regular hand motion for panning & zooming
+        NUIPlugin.addEventListener("handMove", function (handId, newPos) {
+            if (ChromePadder.hands[handId] === undefined)
+                ChromePadder.hands[handId] = {motion: null, gestures: null};
+
+            if (newPos[2] > ChromePadder.activationPlane) {
+                if (ChromePadder.hands[handId].motion !== null) {
+                    console.log("Hand #" + handId + " deactivating");
+                    // hand not beyond activation plane, disable it
+                    ChromePadder.hands[handId].motion = null;
+                }
+            } else {
+                if (ChromePadder.hands[handId].motion === null) {
+                    console.log("Hand #" + handId + " activating");
+                    ChromePadder.hands[handId].motion = [newPos, newPos];
+                } else {
+                    ChromePadder.hands[handId].motion.unshift(newPos);
+                    ChromePadder.hands[handId].motion.pop();
+                }
+                // zoom is only possible with both hands beyond activation plane
+                var bZoomCapable = ChromePadder.hands.length > 1;
+                if (bZoomCapable) {
+                    for (var i = 0; i < 2; ++i) {
+                        if (ChromePadder.hands[i].motion === null) {
+                            bZoomCapable = false;
+                            break;
+                        }
+                    }
+                }
+
+                var message = {};       // commands to dispatch
+
+                if (!bZoomCapable && handId == 0) {
+                    message.deltaX = -(newPos[0]
+                        - ChromePadder.hands[handId].motion[1][0]);
+                    message.deltaY = (newPos[1]
+                        - ChromePadder.hands[handId].motion[1][1]);
+                    if (Math.abs(message.deltaX)
+                        > ChromePadder.NUINoiseThreshold)
+                        message.deltaX *= ChromePadder.NUIScrollSpeed;
+                    else
+                        message.deltaX = undefined;
+                    if (Math.abs(message.deltaY)
+                        > ChromePadder.NUINoiseThreshold)
+                        message.deltaY *= ChromePadder.NUIScrollSpeed;
+                    else
+                        message.deltaY = undefined;
+                } else if (bZoomCapable && handId == 1) {
+                    // I assume that hand #1 data arrives after hand #0
+                    // let's see if we closed the hands in or moved them out
+                    var prevDiff = [
+                        ChromePadder.hands[1].motion[1][0]
+                            - ChromePadder.hands[0].motion[1][0],
+                        ChromePadder.hands[1].motion[1][1]
+                            - ChromePadder.hands[0].motion[1][1]
+                    ];
+                    prevDiff = Math.sqrt(prevDiff[0] * prevDiff[0]
+                        + prevDiff[1] * prevDiff[1]);
+                    var curDiff = [
+                        newPos[0] - ChromePadder.hands[0].motion[0][0],
+                        newPos[1] - ChromePadder.hands[0].motion[0][1]
+                    ];
+                    curDiff = Math.sqrt(curDiff[0] * curDiff[0]
+                        + curDiff[1] + curDiff[1]);
+                    var diff = curDiff - prevDiff;
+                    if (Math.abs(diff) > 2.0 * ChromePadder.NUINoiseThreshold) {
+                        console.log("Zoom delta: " + diff + " (" + prevDiff + " " + curDiff + ")");
+                        /*message.deltaZoom = Math.max(0.1,
+                            diff * ChromePadder.NUIZoomSpeed);*/
+                    }
+                }
+
+                // dispatch message
+                if (message != {}) {
+                    try {
+                        ChromePadder.port.postMessage(message);
+                    } catch (e) {}
+                }
+            }
+        });
+
+        // gesture recognition
         NUIPlugin.addEventListener("gestureRecognized",
             function (handId, gesture, idPos, endPos) {
-                console.log("Received gesture of hand #" + handId + "/"
-                    + NUIPlugin.getNumHands() + " " + gesture + " at "
+                console.log("Received gesture: hand #" + handId + " of "
+                    + NUIPlugin.getNumHands() + ", " + gesture + " at "
                     + JSON.stringify(endPos));
+
+                // if it's the initial focus gesture (number of active hands
+                // == 0), derive the pan & zoom activation plane from it
+                if (ChromePadder.activationPlane === undefined) {
+                    ChromePadder.activationPlane = endPos[2]
+                        - ChromePadder.NUIActivationPlaneOffset;
+                    console.log("Setting activation plane to "
+                        + ChromePadder.activationPlane);
+                } else {
+                    if (ChromePadder.hands[handId] === undefined)
+                        ChromePadder.hands[handId] = {motion: null, gestures: null};
+
+                    var currentTime = new Date().time();
+                    var gestureObj = {
+                        gesture: gesture,
+                        timestamp: currentTime,
+                        idPos: idPos,
+                        endPos: endPos
+                    };
+
+                    if (ChromePadder.hands[handId].gestures === null)
+                        ChromePadder.hands[handId].gestures = [gestureObj];
+                    else {
+                        ChromePadder.hands[handId].gestures.push(gestureObj);
+                        setTimeout(ChromePadder.dispatchAmbiguousGestures,
+                            ChromePadder.NUISimultGestureTimeout);
+                    }
+                
+                    var message = {};       // commands to dispatch
+
+                    var simultGesture = null;
+                    var simultGestureHandId = 0;
+                    for (var i = 0; i < 2; ++i) {
+                        if (i == handId)
+                            continue;
+                        if (currentTime
+                            - ChromePadder.hands[i].gestures[0].timestamp
+                            < ChromePadder.NUISimultGestureTimeout)
+                        simultGesture = ChromePadder.hands[i].gestures.pop();
+                        simultGestureHandId = i;
+                    }
+
+                    // try interpreting two-handed gestures
+                    if (simultGesture != null) {
+                        if ((simultGesture.gesture == "SwipeLeft"
+                                && gesture == "SwipeRight")
+                            || (simultGesture.gesture == "SwipeRight"
+                                && gesture == "SwipeLeft")) {
+                            // tab creation and deletion by swipes
+                            // see if it's an inward or outward swipe
+                            if (Math.abs(simultGesture.endPos[0] - endPos[0])
+                                > Math.abs(simultGesture.idPos[0] - idPos[0]))
+                                // outward - create a new tab
+                                chrome.tabs.create({active: true});
+                            else {
+                                // inward - close tab
+                                chrome.tabs.getSelected(null, function(tab) {
+                                    chrome.tabs.remove(tab.id);
+                                });
+                            }
+                        } else if (simultGesture.gesture == gesture == "Wave") {
+                            // refreshing/stopping
+                            message.historyGo = 0;
+                        } else {
+                            // reschedule interpretation of the gesture
+                            ChromePadder.hands[simultGestureHandId].push(simultGesture);
+                            simultGesture = null;
+                        }
+                    }
+                    
+                    if (simultGesture === null) {
+                        ChromePadder.hands[handId].gestures.pop();
+                        // not a two-handed gesture, interpret as a single one
+                        switch (gesture) {
+                            // mouse click
+                            case "Click":
+                                message.action = 'click';
+                                break;
+                        }
+                    }
+
+                    // dispatch message
+                    try {
+                        ChromePadder.port.postMessage(message);
+                    } catch (e) {}
+                }
             }, false);
     } else {
         // gamepad control
