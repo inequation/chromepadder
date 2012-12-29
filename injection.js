@@ -84,6 +84,7 @@ CPI.simulatedEvent = function(isMouseEvent, el, options) {
     
     if (isMouseEvent)
         console.log('EVENT ' + opts.type + ' TO ' + el
+            + (el.id ? (" (id=" + el.id + ")") : "")
             + ' AT ' + opts.screenX + ',' + opts.screenY);
     else
         console.log('EVENT ' + opts.type + ' TO ' + el
@@ -95,24 +96,67 @@ CPI.simulatedEvent = function(isMouseEvent, el, options) {
 
 CPI.winToDoc = function(coord) {
     return {
-        left: Math.round(coord.left / CPI.zoom) + window.pageXOffset,
-        top: Math.round(coord.top / CPI.zoom) + window.pageYOffset
+        left: Math.round((coord.left + window.pageXOffset) / CPI.zoom),
+        top: Math.round((coord.top + window.pageYOffset) / CPI.zoom)
     };
 }
 
 CPI.docToWin = function(coord) {
     return {
-        left: Math.round(coord.left * CPI.zoom) - window.pageXOffset,
-        top: Math.round(coord.top * CPI.zoom) - window.pageYOffset
+        left: Math.round((coord.left - window.pageXOffset) * CPI.zoom),
+        top: Math.round((coord.top - window.pageYOffset) * CPI.zoom)
     };
 }
 
-// returns document-space croshhair coords
+// returns window-space croshhair coords
 CPI.getCrosshairCoords = function() {
-    return CPI.winToDoc({
-        left: parseFloat(CPI.crosshair.style.left),
-        top: parseFloat(CPI.crosshair.style.top)
-    });
+    if (CPI.crosshairCentered) {
+        var rect = CPI.crosshair.getBoundingClientRect();
+        return {
+            left: Math.round(rect.left * CPI.zoom),
+            top: Math.round(rect.top * CPI.zoom)
+        };
+    } else {
+        return {
+            left: parseFloat(CPI.crosshair.style.left),
+            top: parseFloat(CPI.crosshair.style.top)
+        };
+    }
+}
+
+CPI.updateCrosshair = function(coord) {
+    // handle mouseOver/mouseOut events
+    // move the crosshair out of the way so that we don't pick it up instead
+    // of the actual target
+    if (CPI.crosshairCentered) {
+        CPI.crosshair.style.top = '0%';
+        CPI.crosshair.style.left = '0%';
+    } else {
+        CPI.crosshair.style.top = coord.top + 64 + 'px';
+        CPI.crosshair.style.left = coord.left + 64 + 'px';
+    }
+    // sample the element at the coordinates
+    var newTarget = document.elementFromPoint(coord.left, coord.top);
+    // move crosshair back
+    if (CPI.crosshairCentered) {
+        CPI.crosshair.style.top = '50%';
+        CPI.crosshair.style.left = '50%';
+    } else {
+        CPI.crosshair.style.top = coord.top + 'px';
+        CPI.crosshair.style.left = coord.left + 'px';
+    }
+    console.log('COORD ' + coord.left + ',' + coord.top
+        + '; NEW TARGET = ' + newTarget);
+    if (newTarget !== undefined && newTarget != null
+        && newTarget != CPI.target) {
+        if (CPI.target !== undefined) {
+            CPI.simulatedEvent(true, CPI.target, {type: 'mouseout',
+                screenX: coord.left, screenY: coord.top});
+        }
+        CPI.target = newTarget;
+        CPI.simulatedEvent(true, newTarget, {type: 'mouseover',
+            screenX: coord.left, screenY: coord.top});
+    }
 }
 
 CPI.onScroll = function(deltaX, deltaY) {
@@ -170,39 +214,8 @@ CPI.onScroll = function(deltaX, deltaY) {
         // transform from window space to document space
         coord = CPI.winToDoc(coord);
     }
-    
-    // handle mouseOver/mouseOut events
-    // move the crosshair out of the way so that we don't pick it up instead
-    // of the actual target
-    if (CPI.crosshairCentered) {
-        CPI.crosshair.style.top = '0%';
-        CPI.crosshair.style.left = '0%';
-    } else {
-        CPI.crosshair.style.top = coord.top + 64 + 'px';
-        CPI.crosshair.style.left = coord.left + 64 + 'px';
-    }
-    // sample the element at the coordinates
-    var newTarget = document.elementFromPoint(coord.left, coord.top);
-    // move crosshair back
-    if (CPI.crosshairCentered) {
-        CPI.crosshair.style.top = '50%';
-        CPI.crosshair.style.left = '50%';
-    } else {
-        CPI.crosshair.style.top = coord.top + 'px';
-        CPI.crosshair.style.left = coord.left + 'px';
-    }
-    //console.log('COORD ' + coord.left + ', ' + coord.top
-    //    + '; NEW TARGET = ' + newTarget);
-    if (newTarget !== undefined && newTarget != null
-        && newTarget != CPI.target) {
-        if (CPI.target !== undefined) {
-            CPI.simulatedEvent(true, CPI.target, {type: 'mouseout',
-                screenX: coord.left, screenY: coord.top});
-        }
-        CPI.target = newTarget;
-        CPI.simulatedEvent(true, newTarget, {type: 'mouseover',
-            screenX: coord.left, screenY: coord.top});
-    }
+
+    CPI.updateCrosshair(coord);
 }
 
 CPI.onZoom = function(delta) {
@@ -212,9 +225,11 @@ CPI.onZoom = function(delta) {
     document.body.style.width = document.body.style.zoom;
     CPI.crosshair.reticle.style.zoom = Math.round(1.0 / CPI.zoom * 100) + '%';
     // scroll so that the crosshair remains in the centre
-    var coord = CPI.getCrosshairCoords();
+    /*var coord = CPI.getCrosshairCoords();
     CPI.onScroll(Math.round((window.innerWidth / 2) - coord.left * CPI.zoom),
-        Math.round((window.innerHeight / 2) - coord.top * CPI.zoom));
+        Math.round((window.innerHeight / 2) - coord.top * CPI.zoom));*/
+    var coord = CPI.getCrosshairCoords();
+    CPI.updateCrosshair(coord);
 }
 
 CPI.createCrosshair = function() {
@@ -236,7 +251,7 @@ CPI.createCrosshair = function() {
             + (window.innerWidth / 2) + 'px';
         // scroll so that visually nothing changes
         if (document.location.hash == '')
-            window.scrollTo(window.innerHeight / 2, window.innerWidth / 2);
+            window.scrollTo(window.innerHeight, window.innerWidth);
         
         CPI.crosshair.style.top = '50%';
         CPI.crosshair.style.left = '50%';
@@ -315,11 +330,11 @@ chrome.extension.onConnect.addListener(function(port) {
             if (CPI.target !== undefined && CPI.target !== null) {
                 var coord = CPI.getCrosshairCoords();
                 CPI.simulatedEvent(true, CPI.target, {type: message.action,
-                    screenX: coord.left, screenY: coord.top});
+                    clientX: coord.left, clientY: coord.top});
                 if (message.secondaryAction !== undefined)
                     CPI.simulatedEvent(true, CPI.target,
                         {type: message.secondaryAction,
-                        screenX: coord.left, screenY: coord.top});
+                        clientX: coord.left, clientY: coord.top});
             }
         }
         if (message.arrowLeft !== undefined)

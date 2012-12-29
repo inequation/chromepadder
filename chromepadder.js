@@ -9,10 +9,10 @@ ChromePadder.activeFPS = 30;
 ChromePadder.scrollSpeed = 200;
 ChromePadder.zoomSpeed = 0.05;
 ChromePadder.NUIActivationPlaneOffset = 150.0;  // milimetres
-ChromePadder.NUIScrollSpeed = 3;
-ChromePadder.NUIZoomSpeed = 0.005;
-ChromePadder.NUINoiseThreshold = 2.0;
-ChromePadder.NUISimultGestureTimeout = 500;     // milliseconds
+ChromePadder.NUIScrollSpeed = 0.8;
+ChromePadder.NUIZoomSpeed = 0.001;
+ChromePadder.NUINoiseThreshold = 0.8;
+ChromePadder.NUISimultGestureTimeout = 400;     // milliseconds
 
 ChromePadder.cycleTab = function(forward) {
     chrome.windows.getLastFocused({populate: true},
@@ -72,15 +72,18 @@ ChromePadder.onMessageFromTab = function(message) {
 }
 
 ChromePadder.dispatchAmbiguousGestures = function() {
+    console.log("Dispatching ambiguous gestures now");
     for (var i = 0; i < ChromePadder.hands.length; ++i) {
-        while (ChromePadder.hands[i].gestures.length > 0) {
+        while (ChromePadder.hands[i].gestures
+            && ChromePadder.hands[i].gestures.length > 0) {
             var gestureObj = ChromePadder.hands[i].gestures.pop();
+            console.log("Hand " + i + " " + JSON.stringify(gestureObj));
             switch (gestureObj.gesture) {
                 case "SwipeLeft":
-                    ChromePadder.cycleTab(false);
+                    ChromePadder.cycleTab(true);
                     break;
                 case "SwipeRight":
-                    ChromePadder.cycleTab(true);
+                    ChromePadder.cycleTab(false);
                     break;
                 case "SwipeUp":
                     try {
@@ -157,10 +160,11 @@ ChromePadder.main = function() {
         NUIPlugin.addEventListener("handDestroyed", function (handId) {
             // if this was the last active hand, clear the activation plane
             // setting
-            if (NUIPlugin.getNumHands() == 1)
+            console.log("Lost hand " + handId + ", " + NUIPlugin.getNumHands()
+                + " left");
+            if (NUIPlugin.getNumHands() == 0)
                 ChromePadder.activationPlane = undefined;
-            if (ChromePadder.hands[handId] !== undefined)
-                ChromePadder.hands[handId] = undefined;
+            ChromePadder.hands[handId] = {motion: null, gestures: null};
         });
 
         // regular hand motion for panning & zooming
@@ -182,6 +186,7 @@ ChromePadder.main = function() {
                     ChromePadder.hands[handId].motion.unshift(newPos);
                     ChromePadder.hands[handId].motion.pop();
                 }
+                
                 // zoom is only possible with both hands beyond activation plane
                 var bZoomCapable = ChromePadder.hands.length > 1;
                 if (bZoomCapable) {
@@ -195,44 +200,46 @@ ChromePadder.main = function() {
 
                 var message = {};       // commands to dispatch
 
-                if (!bZoomCapable && handId == 0) {
-                    message.deltaX = -(newPos[0]
-                        - ChromePadder.hands[handId].motion[1][0]);
-                    message.deltaY = (newPos[1]
-                        - ChromePadder.hands[handId].motion[1][1]);
-                    if (Math.abs(message.deltaX)
-                        > ChromePadder.NUINoiseThreshold)
-                        message.deltaX *= ChromePadder.NUIScrollSpeed;
-                    else
-                        message.deltaX = undefined;
-                    if (Math.abs(message.deltaY)
-                        > ChromePadder.NUINoiseThreshold)
-                        message.deltaY *= ChromePadder.NUIScrollSpeed;
-                    else
-                        message.deltaY = undefined;
+                if (!bZoomCapable) {
+                    var delta = [
+                        newPos[0] - ChromePadder.hands[handId].motion[1][0],
+                        newPos[1] - ChromePadder.hands[handId].motion[1][1]
+                    ];
+                    if (Math.abs(delta[0]) > ChromePadder.NUINoiseThreshold)
+                        message.deltaX = Math.pow(Math.abs(delta[0]), 1.5)
+                            * (delta[0] < 0.0 ? 1.0 : -1.0)
+                            * ChromePadder.NUIScrollSpeed;
+                    if (Math.abs(delta[1]) > ChromePadder.NUINoiseThreshold)
+                        message.deltaY = Math.pow(Math.abs(delta[1]), 1.5)
+                            * (delta[1] < 0.0 ? -1.0 : 1.0)
+                            * ChromePadder.NUIScrollSpeed;
                 } else if (bZoomCapable && handId == 1) {
                     // I assume that hand #1 data arrives after hand #0
                     // let's see if we closed the hands in or moved them out
-                    var prevDiff = [
-                        ChromePadder.hands[1].motion[1][0]
-                            - ChromePadder.hands[0].motion[1][0],
-                        ChromePadder.hands[1].motion[1][1]
-                            - ChromePadder.hands[0].motion[1][1]
+                    
+                    // distance between hands in the previous frame
+                    var hand0 = ChromePadder.hands[0].motion[1];
+                    var hand1 = ChromePadder.hands[1].motion[1];
+                    var diffVect = [
+                        hand1[0] - hand0[0],
+                        hand1[1] - hand0[1]
                     ];
-                    prevDiff = Math.sqrt(prevDiff[0] * prevDiff[0]
-                        + prevDiff[1] * prevDiff[1]);
-                    var curDiff = [
-                        newPos[0] - ChromePadder.hands[0].motion[0][0],
-                        newPos[1] - ChromePadder.hands[0].motion[0][1]
+                    prevDiff = Math.sqrt(diffVect[0] * diffVect[0]
+                        + diffVect[1] * diffVect[1]);
+                    
+                    // distance between hands in the current frame
+                    hand0 = ChromePadder.hands[0].motion[0];
+                    hand1 = ChromePadder.hands[1].motion[0];
+                    diffVect = [
+                        hand1[0] - hand0[0],
+                        hand1[1] - hand0[1]
                     ];
-                    curDiff = Math.sqrt(curDiff[0] * curDiff[0]
-                        + curDiff[1] + curDiff[1]);
+                    curDiff = Math.sqrt(diffVect[0] * diffVect[0]
+                        + diffVect[1] * diffVect[1]);
+                    
                     var diff = curDiff - prevDiff;
-                    if (Math.abs(diff) > 2.0 * ChromePadder.NUINoiseThreshold) {
-                        console.log("Zoom delta: " + diff + " (" + prevDiff + " " + curDiff + ")");
-                        /*message.deltaZoom = Math.max(0.1,
-                            diff * ChromePadder.NUIZoomSpeed);*/
-                    }
+                    if (Math.abs(diff) > 2.0 * ChromePadder.NUINoiseThreshold)
+                        message.deltaZoom = diff * ChromePadder.NUIZoomSpeed;
                 }
 
                 // dispatch message
@@ -262,7 +269,7 @@ ChromePadder.main = function() {
                     if (ChromePadder.hands[handId] === undefined)
                         ChromePadder.hands[handId] = {motion: null, gestures: null};
 
-                    var currentTime = new Date().time();
+                    var currentTime = new Date().getTime();
                     var gestureObj = {
                         gesture: gesture,
                         timestamp: currentTime,
@@ -283,7 +290,10 @@ ChromePadder.main = function() {
                     var simultGesture = null;
                     var simultGestureHandId = 0;
                     for (var i = 0; i < 2; ++i) {
-                        if (i == handId)
+                        if (i == handId
+                            || !ChromePadder.hands[i]
+                            || !ChromePadder.hands[i].gestures
+                            || ChromePadder.hands[i].gestures.length < 1)
                             continue;
                         if (currentTime
                             - ChromePadder.hands[i].gestures[0].timestamp
@@ -292,6 +302,7 @@ ChromePadder.main = function() {
                         simultGestureHandId = i;
                     }
 
+                    console.log(JSON.stringify(simultGesture));
                     // try interpreting two-handed gestures
                     if (simultGesture != null) {
                         if ((simultGesture.gesture == "SwipeLeft"
@@ -299,7 +310,12 @@ ChromePadder.main = function() {
                             || (simultGesture.gesture == "SwipeRight"
                                 && gesture == "SwipeLeft")) {
                             // tab creation and deletion by swipes
+                            ChromePadder.hands[handId].gestures.pop();
                             // see if it's an inward or outward swipe
+                            /*console.log("Simult swipe: "
+                                + Math.abs(simultGesture.endPos[0] - endPos[0])
+                                + " "
+                                + Math.abs(simultGesture.idPos[0] - idPos[0]));*/
                             if (Math.abs(simultGesture.endPos[0] - endPos[0])
                                 > Math.abs(simultGesture.idPos[0] - idPos[0]))
                                 // outward - create a new tab
@@ -321,12 +337,13 @@ ChromePadder.main = function() {
                     }
                     
                     if (simultGesture === null) {
-                        ChromePadder.hands[handId].gestures.pop();
                         // not a two-handed gesture, interpret as a single one
                         switch (gesture) {
                             // mouse click
                             case "Click":
                                 message.action = 'click';
+                                // not possibly part of a two-hand gesture
+                                ChromePadder.hands[handId].gestures.pop();
                                 break;
                         }
                     }

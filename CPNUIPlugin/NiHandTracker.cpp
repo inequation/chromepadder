@@ -26,7 +26,6 @@
 #include <cassert>
 #include <cmath>
 #include <algorithm>
-#include <limits>
 
 using namespace xn;
 
@@ -84,9 +83,10 @@ void XN_CALLBACK_TYPE HandTracker::Gesture_Recognized(	xn::GestureGenerator&	/*g
 	else
 	{
 		XnUserID ClosestHand = 0;
-		XnFloat ClosestDistance = std::numeric_limits<XnFloat>::infinity();
+		XnFloat ClosestDistance = 100000.f * 100000.f;
 		const TrailHistory::ConstIterator HEnd = pThis->m_History.End();
 		int Index = 0;
+		printf("Looking for closest hand\n");
 		for (TrailHistory::ConstIterator HIt = pThis->m_History.Begin();
 			HIt != HEnd;
 			++HIt, ++Index)
@@ -101,12 +101,14 @@ void XN_CALLBACK_TYPE HandTracker::Gesture_Recognized(	xn::GestureGenerator&	/*g
 			const XnFloat Dist = Diff.X * Diff.X +
 								Diff.Y * Diff.Y +
 								Diff.Z * Diff.Z;
+			printf("Distance: %f Index: %d\n", sqrtf(Dist), Index);
 			if (ClosestDistance > Dist)
 			{
 				ClosestDistance = Dist;
 				ClosestHand = Index;
 			}
 		}
+		printf("Closest: %f Index: %d\n", sqrtf(ClosestDistance), ClosestHand);
 		if (!GJSAPI.expired())
 		{
 			std::vector<float> IDPos(3), EndPos(3);
@@ -292,9 +294,11 @@ void XN_CALLBACK_TYPE HandTracker::Hand_Update(	xn::HandsGenerator& generator,
 			UserState.GestureState = DetectedGesture;
 		const XnChar *GestureString =
 			GetGestureStringForState(UserState.GestureState);
+		Trail::ConstIterator Bottom = tend;
+		--Bottom;
 		Gesture_Recognized(
 			(*HandTracker::sm_Instances.Begin())->m_GestureGenerator,
-			GestureString, pPosition, pPosition, pCookie);
+			GestureString, &*Bottom, pPosition, pCookie);
 		UserState.GestureState = DetectedGesture;
 	}
 	else if (UserState.GestureState == GS_NONE)
