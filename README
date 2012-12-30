@@ -1,7 +1,12 @@
 Chromium/Google Chrome extension for controlling the browser with a gamepad or
-a Kinect device
+a NUI device
 
 Written by Leszek Godlewski <github@inequation.org>
+
+The NUI plugin uses FireBreath and is more of a doodle (written as a university
+assignment) than a solid example of a NUI implementation. If you want something
+more reliable, you should check DepthJS out:
+http://depthjs.media.mit.edu/
 
 Crosshairs Pack for Red Eclipse by fluxord
 http://forum.freegamedev.net/viewtopic.php?f=53&t=1471
