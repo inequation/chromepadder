@@ -2,6 +2,7 @@ Chromium/Google Chrome extension for controlling the browser with a gamepad or
 a NUI device
 
 Written by Leszek Godlewski <github@inequation.org>
+Project for the Embedded Multimedia Systems course at the Silesian University of Technology
 
 The NUI plugin uses FireBreath and is more of a doodle (written as a university
 assignment) than a solid example of a NUI implementation. If you want something
